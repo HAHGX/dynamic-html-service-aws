@@ -31,7 +31,6 @@ provider "aws" {
     tags = {
       Environment = terraform.workspace
       Project     = "dynamic-html-service"
-      Owner       = "Merapar Challenge"
       ManagedBy   = "Terraform"
       Version     = "1.0"
       Service     = "Dynamic HTML Service"
@@ -43,8 +42,8 @@ provider "aws" {
 
 terraform {
   backend "s3" {
-    bucket               = "infra.merapar-challenge.com"
-    workspace_key_prefix = "merapar-challenge/terraform/dynamic-html-service"
+    bucket               = "infra.handson.com"
+    workspace_key_prefix = "handson/terraform/dynamic-html-service"
 
     # When using a non-default workspace, the state path will be /workspace_key_prefix/workspace_name/key
     # In this case if the workspace is development will be terraform/states/services/development/PROJECT_NAME.tfstate
@@ -52,7 +51,7 @@ terraform {
 
     region   = "us-east-1"
     encrypt  = true
-    role_arn = "arn:aws:iam::123456789012:role/MeraparChallengeRole"
+    role_arn = "arn:aws:iam::123456789012:role/handson-terraform-backend-role"
   }
 }
 # aws caller identity data source for retrieving the current AWS account ID and region.

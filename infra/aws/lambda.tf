@@ -14,6 +14,8 @@ resource "aws_lambda_function" "html_lambda" {
   environment {
     variables = {
       DYNAMIC_STRING_PARAM_NAME = var.dynamic_string_param_name
+      AWS_REGION                = var.aws_region
+      Environment                = terraform.workspace
     }
   }
 }
