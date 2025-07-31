@@ -32,15 +32,29 @@ jobs:
               - name: Generate Lint Report
                 id: report
                 run: |
-                  {
-                    echo "## Terraform Lint Report"
-                    echo ""
-                    echo "**Format Check:**"
-                    terraform fmt -check -recursive || echo "Formatting issues found."
-                    echo ""
-                    echo "**Validate:**"
-                    terraform validate || echo "Validation issues found."
-                  } > lint-report.md
+                  echo "## 🚦 Terraform Lint Report" > lint-report.md
+                  echo "" >> lint-report.md
+                  echo "### 📝 Format Check" >> lint-report.md
+                  fmt_output=$(terraform fmt -check -recursive 2>&1)
+                  if [ $? -eq 0 ]; then
+                    echo "✅ All files are correctly formatted." >> lint-report.md
+                  else
+                    echo "❌ Formatting issues found:" >> lint-report.md
+                    echo "" >> lint-report.md
+                    echo "<details><summary>Show details</summary>" >> lint-report.md
+                    echo '' >> lint-report.md
+                    echo "$fmt_output" >> lint-report.md
+                    echo "</details>" >> lint-report.md
+                  fi
+                  echo "" >> lint-report.md
+                  echo "### 🔎 Validate" >> lint-report.md
+                  validate_output=$(terraform validate 2>&1 | grep -vE '\\x1b|\[0m|\[32m|\[1m')
+                  if echo "$validate_output" | grep -q "Success!"; then
+                    echo "✅ The configuration is valid." >> lint-report.md
+                  else
+                    echo "❌ Validation issues found:" >> lint-report.md
+                    echo "$validate_output" >> lint-report.md
+                  fi
         
               - name: Publish Lint Report to PR
                 uses: marocchino/sticky-pull-request-comment@v2
