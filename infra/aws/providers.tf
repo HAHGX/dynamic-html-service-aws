@@ -16,10 +16,6 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
-  assume_role {
-    role_arn = "arn:aws:iam::${var.environment_account[terraform.workspace]}:role/${var.aws_role_name}"
-  }
-
   allowed_account_ids = [
     var.environment_account[terraform.workspace],
   ]
