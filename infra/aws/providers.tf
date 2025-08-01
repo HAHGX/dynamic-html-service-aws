@@ -47,7 +47,6 @@ terraform {
 
     region         = "us-east-2"
     encrypt        = true
-    role_arn       = "arn:aws:iam::942010118656:role/HandsonTerraformBackendRole"
     dynamodb_table = "terraform-state-lock"
   }
 }

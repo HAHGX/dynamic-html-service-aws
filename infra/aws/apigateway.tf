@@ -18,10 +18,24 @@ resource "aws_apigatewayv2_route" "get_html" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
 }
 
+# Add root route for convenience
+resource "aws_apigatewayv2_route" "get_root" {
+  api_id    = aws_apigatewayv2_api.html_api.id
+  route_key = "GET /"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.html_api.id
   name        = "$default"
   auto_deploy = true
+
+  # Enable detailed CloudWatch metrics and rate limiting
+  default_route_settings {
+    throttling_rate_limit    = 1000
+    throttling_burst_limit   = 2000
+    detailed_metrics_enabled = true
+  }
 }
 
 resource "aws_lambda_permission" "apigw_lambda" {
@@ -31,3 +45,4 @@ resource "aws_lambda_permission" "apigw_lambda" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.html_api.execution_arn}/*/*"
 }
+
