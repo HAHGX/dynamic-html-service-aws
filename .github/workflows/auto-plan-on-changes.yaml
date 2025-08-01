@@ -52,7 +52,7 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="region=us-east-2" \
             -backend-config="encrypt=true" \
-            -backend-config="dynamodb_table=terraform-state-lock" 2>&1 | tee init_output.txt
+            -backend-config="dynamodb_table=terraform-state-lock"
         working-directory: ./infra/aws
         continue-on-error: true
 
@@ -70,7 +70,20 @@ jobs:
         if: steps.workspace.outcome == 'success'
         id: plan
         run: |
-          terraform plan -no-color -out=tfplan-${{ matrix.environment }} 2>&1 | tee plan_output_${{ matrix.environment }}.txt
+          PLAN_OUTPUT=$(terraform plan -no-color 2>&1)
+          PLAN_EXIT_CODE=$?
+          
+          # Store plan output in environment variable for comment
+          {
+            echo "plan_output<<EOF"
+            echo "$PLAN_OUTPUT"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+          
+          echo "exit_code=$PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          # Exit with the same code as terraform plan
+          exit $PLAN_EXIT_CODE
         working-directory: ./infra/aws
         continue-on-error: true
 
@@ -113,23 +126,6 @@ jobs:
             echo "**Commit:** \`$COMMIT\`"
             echo ""
             
-            # Init failure section
-            if [ "$INIT_STATUS" = "failure" ]; then
-              echo "### ❌ Init Failed"
-              echo "<details>"
-              echo "<summary>View Init Error</summary>"
-              echo ""
-              echo "\`\`\`"
-              if [ -f "./infra/aws/init_output.txt" ]; then
-                cat "./infra/aws/init_output.txt"
-              else
-                echo "Init output file not found"
-              fi
-              echo "\`\`\`"
-              echo "</details>"
-              echo ""
-            fi
-            
             # Plan success section
             if [ "$PLAN_STATUS" = "success" ]; then
               echo "### 📋 Terraform Plan Results"
@@ -137,11 +133,7 @@ jobs:
               echo "<summary>🔍 View Plan for $ENV</summary>"
               echo ""
               echo "\`\`\`terraform"
-              if [ -f "./infra/aws/plan_output_$ENV.txt" ]; then
-                cat "./infra/aws/plan_output_$ENV.txt"
-              else
-                echo "Plan output file not found"
-              fi
+              echo '${{ steps.plan.outputs.plan_output }}'
               echo "\`\`\`"
               echo "</details>"
               echo ""
@@ -157,11 +149,7 @@ jobs:
               echo "<summary>View Plan Error</summary>"
               echo ""
               echo "\`\`\`"
-              if [ -f "./infra/aws/plan_output_$ENV.txt" ]; then
-                cat "./infra/aws/plan_output_$ENV.txt"
-              else
-                echo "Plan output file not found"
-              fi
+              echo '${{ steps.plan.outputs.plan_output }}'
               echo "\`\`\`"
               echo "</details>"
               echo ""
