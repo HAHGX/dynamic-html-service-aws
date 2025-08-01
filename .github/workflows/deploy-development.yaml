@@ -20,6 +20,10 @@ on:
 
 jobs:
   deploy-dev:
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/deploy.yaml
     with:
       workspace: development

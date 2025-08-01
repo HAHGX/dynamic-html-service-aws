@@ -27,6 +27,10 @@ jobs:
     
   call-deploy:
     needs: deploy-prod
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/deploy.yaml
     with:
       workspace: production
