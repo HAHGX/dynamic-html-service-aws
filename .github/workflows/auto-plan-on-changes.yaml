@@ -103,72 +103,44 @@ jobs:
             echo "auto_deploy=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create PR Comment Content
-        if: github.event_name == 'pull_request' && always()
-        id: comment-content
-        env:
-          PLAN_OUTPUT: ${{ steps.plan.outputs.plan_output }}
-        run: |
-          ENV="${{ matrix.environment }}"
-          INIT_STATUS="${{ steps.init.outcome }}"
-          WORKSPACE_STATUS="${{ steps.workspace.outcome }}"
-          PLAN_STATUS="${{ steps.plan.outcome }}"
-          COMMIT="${{ github.sha }}"
-          DEPLOY_CMD="${{ steps.deploy-commands.outputs.deploy_cmd }}"
-          
-          # Start building the comment
-          {
-            echo "comment_body<<EOF"
-            echo "## 🏗️ Infrastructure Changes Detected - \`$ENV\` Environment"
-            echo ""
-            echo "**Environment:** \`$ENV\`"
-            echo "**Terraform Init:** $([ "$INIT_STATUS" = "success" ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "**Workspace Setup:** $([ "$WORKSPACE_STATUS" = "success" ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "**Plan Status:** $([ "$PLAN_STATUS" = "success" ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "**Commit:** \`$COMMIT\`"
-            echo ""
-            
-            # Plan success section
-            if [ "$PLAN_STATUS" = "success" ]; then
-              echo "### 📋 Terraform Plan Results"
-              echo "<details>"
-              echo "<summary>🔍 View Plan for $ENV</summary>"
-              echo ""
-              echo "\`\`\`terraform"
-              echo "$PLAN_OUTPUT"
-              echo "\`\`\`"
-              echo "</details>"
-              echo ""
-              echo "### 🚀 Next Steps for $ENV:"
-              echo "$DEPLOY_CMD"
-              echo ""
-            fi
-            
-            # Plan failure section
-            if [ "$PLAN_STATUS" = "failure" ]; then
-              echo "### ❌ Plan Failed"
-              echo "<details>"
-              echo "<summary>View Plan Error</summary>"
-              echo ""
-              echo "\`\`\`"
-              echo "$PLAN_OUTPUT"
-              echo "\`\`\`"
-              echo "</details>"
-              echo ""
-            fi
-            
-            echo "---"
-            echo "*Auto-generated from infrastructure changes detection*"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
       - name: Comment Plan Results on PR
         if: github.event_name == 'pull_request' && always()
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          body: ${{ steps.comment-content.outputs.comment_body }}
+          body: |
+            ## 🏗️ Infrastructure Changes Detected - `${{ matrix.environment }}` Environment
+            
+            **Environment:** `${{ matrix.environment }}`
+            **Terraform Init:** ${{ steps.init.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Workspace Setup:** ${{ steps.workspace.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Plan Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Commit:** `${{ github.sha }}`
+            
+            ${{ steps.plan.outcome == 'success' && '### 📋 Terraform Plan Results' || '' }}
+            ${{ steps.plan.outcome == 'success' && '<details>' || '' }}
+            ${{ steps.plan.outcome == 'success' && format('<summary>🔍 View Plan for {0}</summary>', matrix.environment) || '' }}
+            ${{ steps.plan.outcome == 'success' && '' || '' }}
+            ${{ steps.plan.outcome == 'success' && '```terraform' || '' }}
+            ${{ steps.plan.outcome == 'success' && steps.plan.outputs.plan_output || '' }}
+            ${{ steps.plan.outcome == 'success' && '```' || '' }}
+            ${{ steps.plan.outcome == 'success' && '</details>' || '' }}
+            ${{ steps.plan.outcome == 'success' && '' || '' }}
+            ${{ steps.plan.outcome == 'success' && format('### 🚀 Next Steps for {0}:', matrix.environment) || '' }}
+            ${{ steps.plan.outcome == 'success' && steps.deploy-commands.outputs.deploy_cmd || '' }}
+            
+            ${{ steps.plan.outcome == 'failure' && '### ❌ Plan Failed' || '' }}
+            ${{ steps.plan.outcome == 'failure' && '<details>' || '' }}
+            ${{ steps.plan.outcome == 'failure' && '<summary>View Plan Error</summary>' || '' }}
+            ${{ steps.plan.outcome == 'failure' && '' || '' }}
+            ${{ steps.plan.outcome == 'failure' && '```' || '' }}
+            ${{ steps.plan.outcome == 'failure' && steps.plan.outputs.plan_output || '' }}
+            ${{ steps.plan.outcome == 'failure' && '```' || '' }}
+            ${{ steps.plan.outcome == 'failure' && '</details>' || '' }}
+            
+            ---
+            *Auto-generated from infrastructure changes detection*
 
   summary-comment:
     if: github.event_name == 'pull_request'
