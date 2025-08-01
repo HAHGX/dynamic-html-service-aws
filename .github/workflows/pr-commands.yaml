@@ -151,7 +151,6 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="region=us-east-2" \
             -backend-config="encrypt=true" \
-            -backend-config="role_arn=arn:aws:iam::942010118656:role/HandsonTerraformBackendRole" \
             -backend-config="dynamodb_table=terraform-state-lock"
         working-directory: ./infra/aws
 
