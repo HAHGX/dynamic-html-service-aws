@@ -1,0 +1,183 @@
+name: Auto Terraform Plan on Infrastructure Changes
+
+on:
+  pull_request:
+    branches: [ main, feature/*, bugfix/*, hotfix/* ]
+    paths:
+      - 'infra/**'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.envs.outputs.environments }}
+    steps:
+      - name: Set environments
+        id: envs
+        run: |
+          echo "environments=[\"development\",\"staging\",\"production\"]" >> $GITHUB_OUTPUT
+
+  plan-all-environments:
+    needs: detect-changes
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.0"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::942010118656:role/HandsonTerraformBackendRole
+          aws-region: us-east-2
+
+      - name: Terraform Init
+        id: init
+        run: |
+          terraform init \
+            -backend-config="bucket=infra.handson.com" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=us-east-2" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=terraform-state-lock" 2>&1 | tee init_output.txt
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Select/Create Terraform Workspace
+        if: steps.init.outcome == 'success'
+        id: workspace
+        run: |
+          terraform workspace select ${{ matrix.environment }} || \
+          terraform workspace new ${{ matrix.environment }}
+          echo "Current workspace: $(terraform workspace show)"
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Terraform Plan
+        if: steps.workspace.outcome == 'success'
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan-${{ matrix.environment }} 2>&1 | tee plan_output_${{ matrix.environment }}.txt
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Determine deployment commands
+        id: deploy-commands
+        run: |
+          ENV="${{ matrix.environment }}"
+          
+          if [ "$ENV" = "development" ]; then
+            echo "deploy_cmd=Comment \`terraform apply\` in this PR to deploy to development" >> $GITHUB_OUTPUT
+            echo "auto_deploy=true" >> $GITHUB_OUTPUT
+          elif [ "$ENV" = "staging" ]; then
+            echo "deploy_cmd=Comment \`terraform apply -workspace=staging\` in this PR to deploy to staging" >> $GITHUB_OUTPUT
+            echo "auto_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "deploy_cmd=Go to Actions → Deploy Production → Run with \`apply\` action (requires CONFIRM)" >> $GITHUB_OUTPUT
+            echo "auto_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment Plan Results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 🏗️ Infrastructure Changes Detected - `${{ matrix.environment }}` Environment
+            
+            **Environment:** `${{ matrix.environment }}`
+            **Terraform Init:** ${{ steps.init.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Workspace Setup:** ${{ steps.workspace.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Plan Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Commit:** `${{ github.sha }}`
+            
+            ${{ steps.init.outcome == 'failure' && '### ❌ Init Failed
+            <details>
+            <summary>View Init Error</summary>
+            
+            ```
+            $(cat infra/aws/init_output.txt)
+            ```
+            </details>' || '' }}
+            
+            ${{ steps.plan.outcome == 'success' && '### 📋 Terraform Plan Results
+            <details>
+            <summary>🔍 View Plan for ' + matrix.environment + '</summary>
+            
+            ```terraform
+            $(cat infra/aws/plan_output_' + matrix.environment + '.txt)
+            ```
+            </details>
+            
+            ### 🚀 Next Steps for ' + matrix.environment + ':
+            ${{ steps.deploy-commands.outputs.deploy_cmd }}' || '' }}
+            
+            ${{ steps.plan.outcome == 'failure' && '### ❌ Plan Failed
+            <details>
+            <summary>View Plan Error</summary>
+            
+            ```
+            $(cat infra/aws/plan_output_' + matrix.environment + '.txt)
+            ```
+            </details>' || '' }}
+            
+            ---
+            *Auto-generated from infrastructure changes detection*
+
+  summary-comment:
+    if: github.event_name == 'pull_request'
+    needs: [detect-changes, plan-all-environments]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Create Summary Comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 📊 Infrastructure Changes Summary
+            
+            🔍 **Changes detected in:** `infra/` directory
+            
+            ### 🌍 Environment Plans:
+            - 🟢 **Development**: Ready for deployment via PR comment
+            - 🟡 **Staging**: Manual deployment via PR comment  
+            - 🔴 **Production**: Manual deployment via Actions (requires confirmation)
+            
+            ### 🎯 Quick Deploy Guide:
+            
+            #### For Development:
+            ```
+            terraform apply
+            ```
+            
+            #### For Staging:
+            ```
+            terraform apply -workspace=staging
+            ```
+            
+            #### For Production:
+            1. Go to **Actions** → **Deploy Production**
+            2. Click **Run workflow**
+            3. Select action: `apply`
+            4. Type `CONFIRM` in confirmation field
+            5. Click **Run workflow**
+            
+            ---
+            💡 **Tip:** Always review the plan outputs above before deploying to any environment!

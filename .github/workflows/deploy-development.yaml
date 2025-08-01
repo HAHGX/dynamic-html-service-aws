@@ -1,11 +1,6 @@
 name: Deploy Development
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'infra/aws/**'
   workflow_dispatch:
     inputs:
       action:
