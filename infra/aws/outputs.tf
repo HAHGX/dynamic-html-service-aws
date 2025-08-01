@@ -10,6 +10,7 @@ output "api_gateway_url" {
 output "ssm_dynamic_string_value" {
   description = "Valor del parámetro SSM dinámico"
   value       = aws_ssm_parameter.dynamic_string.value
+  sensitive   = true
 }
 
 output "lambda_function_name_html_lambda" {
