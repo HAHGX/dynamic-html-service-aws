@@ -50,14 +50,6 @@ jobs:
         with:
           terraform_version: "1.12.0"
 
-      # =====================================================================================
-      # Configuración de credenciales de AWS usando OIDC.
-      # Usa el mismo rol que ya tienes configurado para el backend de Terraform.
-      # Este rol debe tener permisos para:
-      # 1. Acceso al bucket S3 "infra.handson.com" para el estado de Terraform
-      # 2. Permisos para asumir el rol "HandsonTerraformBackendRole"
-      # 3. Permisos para crear/modificar los recursos de AWS definidos en tu configuración
-      # =====================================================================================
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
