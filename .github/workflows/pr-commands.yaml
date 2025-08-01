@@ -151,19 +151,21 @@ jobs:
             -backend-config="key=terraform.tfstate" \
             -backend-config="region=us-east-2" \
             -backend-config="encrypt=true" \
-            -backend-config="role_arn=arn:aws:iam::942010118656:role/HandsonTerraformBackendRole" \
-            -backend-config="dynamodb_table=terraform-state-lock"
+            -backend-config="dynamodb_table=terraform-state-lock" 2>&1 | tee init_output.txt
         working-directory: ./infra/aws
+        continue-on-error: true
 
       - name: Select/Create Terraform Workspace
-        if: steps.parse.outputs.valid == 'true'
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'success'
+        id: workspace
         run: |
           terraform workspace select ${{ steps.parse.outputs.workspace }} || \
-          terraform workspace new ${{ steps.parse.outputs.workspace }}
+          terraform workspace new ${{ steps.parse.outputs.workspace }} 2>&1 | tee workspace_output.txt
         working-directory: ./infra/aws
+        continue-on-error: true
 
       - name: Terraform Plan
-        if: steps.parse.outputs.valid == 'true' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'success' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
         id: plan
         run: |
           terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
@@ -171,7 +173,7 @@ jobs:
         continue-on-error: true
 
       - name: Terraform Apply
-        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'apply'
+        if: steps.parse.outputs.valid == 'true' && steps.plan.outcome == 'success' && steps.parse.outputs.action == 'apply'
         id: apply
         run: |
           terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply_output.txt
@@ -179,7 +181,7 @@ jobs:
         continue-on-error: true
 
       - name: Terraform Destroy
-        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'destroy'
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'success' && steps.parse.outputs.action == 'destroy'
         id: destroy
         run: |
           terraform plan -destroy -no-color -out=destroy_plan 2>&1 | tee destroy_plan_output.txt
@@ -187,8 +189,58 @@ jobs:
         working-directory: ./infra/aws
         continue-on-error: true
 
+      - name: Comment Init Error
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'failure'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Terraform Init Failed - `${{ steps.parse.outputs.workspace }}` workspace
+            
+            **Command:** `terraform init`
+            **Status:** Failed
+            **Branch:** `${{ steps.pr.outputs.branch }}`
+            **Commit:** `${{ steps.pr.outputs.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            
+            <details>
+            <summary>🔍 View Init Error Output</summary>
+            
+            ```
+            $(cat infra/aws/init_output.txt)
+            ```
+            </details>
+            
+            ---
+            💡 **Common Solutions:**
+            - Check AWS credentials and permissions
+            - Verify S3 bucket `infra.handson.com` exists and is accessible
+            - Ensure DynamoDB table `terraform-state-lock` exists
+            - Verify the backend role `HandsonTerraformBackendRole` has proper permissions
+
+      - name: Comment Workspace Error
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'success' && steps.workspace.outcome == 'failure'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Terraform Workspace Setup Failed - `${{ steps.parse.outputs.workspace }}`
+            
+            **Command:** `terraform workspace select/new ${{ steps.parse.outputs.workspace }}`
+            **Status:** Failed
+            
+            <details>
+            <summary>🔍 View Workspace Error Output</summary>
+            
+            ```
+            $(cat infra/aws/workspace_output.txt)
+            ```
+            </details>
+
       - name: Comment Plan Result
-        if: steps.parse.outputs.valid == 'true' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
+        if: steps.parse.outputs.valid == 'true' && steps.init.outcome == 'success' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -212,7 +264,7 @@ jobs:
             </details>
             
             ---
-            💡 **Next Steps:** If the plan looks good, comment `terraform apply -workspace=${{ steps.parse.outputs.workspace }}` to deploy these changes.
+            ${{ steps.plan.outcome == 'success' && '💡 **Next Steps:** If the plan looks good, comment `terraform apply -workspace=' + steps.parse.outputs.workspace + '` to deploy these changes.' || '❌ **Plan failed. Check the output above for details.**' }}
 
       - name: Comment Apply Result
         if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'apply' && steps.apply.outcome
@@ -281,3 +333,28 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           comment-id: ${{ github.event.comment.id }}
           reactions: '-1'
+
+      - name: Comment General Error
+        if: always() && steps.parse.outputs.valid == 'true' && (steps.init.outcome == 'failure' || steps.workspace.outcome == 'failure' || steps.plan.outcome == 'failure' || steps.apply.outcome == 'failure' || steps.destroy.outcome == 'failure')
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ⚠️ Terraform Execution Summary - `${{ steps.parse.outputs.workspace }}` workspace
+            
+            **Command:** `terraform ${{ steps.parse.outputs.action }}`
+            **Overall Status:** ❌ Failed
+            **Branch:** `${{ steps.pr.outputs.branch }}`
+            **Commit:** `${{ steps.pr.outputs.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            
+            **Step Results:**
+            - Init: ${{ steps.init.outcome == 'success' && '✅' || steps.init.outcome == 'failure' && '❌' || '⏭️ Skipped' }}
+            - Workspace Setup: ${{ steps.workspace.outcome == 'success' && '✅' || steps.workspace.outcome == 'failure' && '❌' || '⏭️ Skipped' }}
+            - Plan: ${{ steps.plan.outcome == 'success' && '✅' || steps.plan.outcome == 'failure' && '❌' || '⏭️ Skipped' }}
+            - Apply: ${{ steps.apply.outcome == 'success' && '✅' || steps.apply.outcome == 'failure' && '❌' || '⏭️ Skipped' }}
+            - Destroy: ${{ steps.destroy.outcome == 'success' && '✅' || steps.destroy.outcome == 'failure' && '❌' || '⏭️ Skipped' }}
+            
+            ---
+            💡 **Next Steps:** Review the error details above and fix any issues before retrying.
