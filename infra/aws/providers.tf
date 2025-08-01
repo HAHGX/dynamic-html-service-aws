@@ -64,6 +64,7 @@ data "aws_caller_identity" "current" {
 # AWS region data source to retrieve the current AWS region.
 # This is useful for dynamically referencing the region in other resources.
 # It allows us to avoid hardcoding the region in our resources.
+
 data "aws_region" "current" {
 }
 

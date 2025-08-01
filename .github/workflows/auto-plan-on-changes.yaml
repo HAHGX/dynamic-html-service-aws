@@ -114,26 +114,26 @@ jobs:
             ```
             </details>' || '' }}
             
-            ${{ steps.plan.outcome == 'success' && '### 📋 Terraform Plan Results
+            ${{ steps.plan.outcome == 'success' && format('### 📋 Terraform Plan Results
             <details>
-            <summary>🔍 View Plan for ' + matrix.environment + '</summary>
+            <summary>🔍 View Plan for {0}</summary>
             
             ```terraform
-            $(cat infra/aws/plan_output_' + matrix.environment + '.txt)
+            $(cat infra/aws/plan_output_{0}.txt)
             ```
             </details>
             
-            ### 🚀 Next Steps for ' + matrix.environment + ':
-            ${{ steps.deploy-commands.outputs.deploy_cmd }}' || '' }}
+            ### 🚀 Next Steps for {0}:', matrix.environment) || '' }}
+            ${{ steps.plan.outcome == 'success' && steps.deploy-commands.outputs.deploy_cmd || '' }}
             
-            ${{ steps.plan.outcome == 'failure' && '### ❌ Plan Failed
+            ${{ steps.plan.outcome == 'failure' && format('### ❌ Plan Failed
             <details>
             <summary>View Plan Error</summary>
             
             ```
-            $(cat infra/aws/plan_output_' + matrix.environment + '.txt)
+            $(cat infra/aws/plan_output_{0}.txt)
             ```
-            </details>' || '' }}
+            </details>', matrix.environment) || '' }}
             
             ---
             *Auto-generated from infrastructure changes detection*
