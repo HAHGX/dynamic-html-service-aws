@@ -1,0 +1,159 @@
+name: Terraform Deploy
+
+on:
+  workflow_call:
+    inputs:
+      workspace:
+        description: 'Terraform workspace'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        type: string
+  workflow_dispatch: # Permite la ejecución manual
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - init
+          - plan
+          - apply
+          - destroy
+      workspace:
+        description: 'Terraform workspace'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Necesario para la autenticación OIDC con AWS
+      contents: read  # Necesario para hacer checkout del código
+      pull-requests: write # Para comentar en PRs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.0"
+
+      # =====================================================================================
+      # Configuración de credenciales de AWS usando OIDC.
+      # Usa el mismo rol que ya tienes configurado para el backend de Terraform.
+      # Este rol debe tener permisos para:
+      # 1. Acceso al bucket S3 "infra.handson.com" para el estado de Terraform
+      # 2. Permisos para asumir el rol "HandsonTerraformBackendRole"
+      # 3. Permisos para crear/modificar los recursos de AWS definidos en tu configuración
+      # =====================================================================================
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::942010118656:role/HandsonTerraformBackendRole
+          aws-region: us-east-2
+
+      - name: Set workspace and action
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_call" ]; then
+            echo "TF_WORKSPACE=${{ inputs.workspace }}" >> $GITHUB_ENV
+            echo "TF_ACTION=${{ inputs.action }}" >> $GITHUB_ENV
+          else
+            echo "TF_WORKSPACE=${{ github.event.inputs.workspace }}" >> $GITHUB_ENV
+            echo "TF_ACTION=${{ github.event.inputs.action }}" >> $GITHUB_ENV
+          fi
+
+      - name: Terraform Init
+        id: init
+        run: |
+          terraform init \
+            -backend-config="bucket=infra.handson.com" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=us-east-2" \
+            -backend-config="encrypt=true" \
+            -backend-config="role_arn=arn:aws:iam::942010118656:role/HandsonTerraformBackendRole" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+        working-directory: ./infra/aws
+
+      - name: Select/Create Terraform Workspace
+        id: workspace
+        run: |
+          echo "🔧 Setting up workspace: $TF_WORKSPACE"
+          terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
+          terraform workspace show
+        working-directory: ./infra/aws
+
+      - name: Terraform Validate
+        id: validate
+        if: env.TF_ACTION == 'init' || env.TF_ACTION == 'plan' || env.TF_ACTION == 'apply'
+        run: terraform validate
+        working-directory: ./infra/aws
+
+      - name: Terraform Plan
+        id: plan
+        if: env.TF_ACTION == 'plan' || env.TF_ACTION == 'apply'
+        run: |
+          echo "📋 Running terraform plan for workspace: $TF_WORKSPACE"
+          terraform plan -out=tfplan-$TF_WORKSPACE
+        working-directory: ./infra/aws
+
+      - name: Terraform Apply
+        id: apply
+        if: env.TF_ACTION == 'apply'
+        run: |
+          echo "🚀 Applying terraform plan for workspace: $TF_WORKSPACE"
+          terraform apply -auto-approve tfplan-$TF_WORKSPACE
+        working-directory: ./infra/aws
+
+      - name: Terraform Destroy Plan
+        id: destroy-plan
+        if: env.TF_ACTION == 'destroy'
+        run: |
+          echo "💥 Planning destroy for workspace: $TF_WORKSPACE"
+          terraform plan -destroy -out=tfplan-destroy-$TF_WORKSPACE
+        working-directory: ./infra/aws
+
+      - name: Terraform Destroy
+        id: destroy
+        if: env.TF_ACTION == 'destroy'
+        run: |
+          echo "💥 Destroying resources for workspace: $TF_WORKSPACE"
+          terraform apply -auto-approve tfplan-destroy-$TF_WORKSPACE
+        working-directory: ./infra/aws
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🚦 Terraform Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workspace:** $TF_WORKSPACE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action:** $TF_ACTION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment Summary on PR
+        if: always() && github.event_name == 'workflow_call'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 🚦 Terraform Execution Summary
+            
+            **Workspace:** `${{ env.TF_WORKSPACE }}`
+            **Action:** `${{ env.TF_ACTION }}`
+            **Status:** ${{ job.status == 'success' && '✅ Success' || '❌ Failed' }}
+            **Commit:** `${{ github.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            
+            ---
+            *Executed via GitHub Actions workflow*

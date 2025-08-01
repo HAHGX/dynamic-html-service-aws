@@ -1,0 +1,69 @@
+name: Terraform Lint
+
+on:
+    pull_request:
+        paths:
+            - '**/*.tf'
+            - '**/*.tfvars'
+
+jobs:
+    terraform-lint:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: write
+        steps:
+              - name: Checkout code
+                uses: actions/checkout@v4
+        
+              - name: Set up Terraform
+                uses: hashicorp/setup-terraform@v3
+        
+              - name: Terraform Format Check
+                id: fmt
+                run: terraform fmt -check -recursive
+                continue-on-error: true
+        
+              - name: Terraform Validate
+                id: validate
+                run: terraform validate
+                continue-on-error: true
+        
+              - name: Generate Lint Report
+                id: report
+                run: |
+                  set +e
+                  echo "## 🚦 Terraform Lint Report" > lint-report.md
+                  echo "" >> lint-report.md
+                  echo "### 📝 Format Check" >> lint-report.md
+                  fmt_output=$(terraform fmt -check -recursive 2>&1)
+                  if [ $? -eq 0 ]; then
+                    echo "✅ All files are correctly formatted." >> lint-report.md
+                  else
+                    echo "❌ Formatting issues found:" >> lint-report.md
+                    echo "" >> lint-report.md
+                    echo "<details><summary>Show details</summary>" >> lint-report.md
+                    echo '' >> lint-report.md
+                    echo "$fmt_output" >> lint-report.md
+                    echo "</details>" >> lint-report.md
+                  fi
+                  echo "" >> lint-report.md
+                  echo "### 🔎 Validate" >> lint-report.md
+                  validate_output=$(terraform validate 2>&1 | grep -vE '\x1b|\[0m|\[32m|\[1m')
+                  if echo "$validate_output" | grep -q "Success!"; then
+                    echo "✅ The configuration is valid." >> lint-report.md
+                  else
+                    echo "❌ Validation issues found:" >> lint-report.md
+                    echo "" >> lint-report.md
+                    echo "<details><summary>Show details</summary>" >> lint-report.md
+                    echo '' >> lint-report.md
+                    echo "$validate_output" >> lint-report.md
+                    echo "</details>" >> lint-report.md
+                  fi
+                  set -e
+        
+              - name: Publish Lint Report to PR
+                uses: marocchino/sticky-pull-request-comment@v2
+                with:
+                  path: lint-report.md
+                  token: ${{ secrets.GITHUB_TOKEN }}
