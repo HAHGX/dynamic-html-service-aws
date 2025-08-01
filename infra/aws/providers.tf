@@ -16,10 +16,6 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
-  assume_role {
-    role_arn = "arn:aws:iam::${var.environment_account[terraform.workspace]}:role/${var.aws_role_name}"
-  }
-
   allowed_account_ids = [
     var.environment_account[terraform.workspace],
   ]
@@ -64,6 +60,7 @@ data "aws_caller_identity" "current" {
 # AWS region data source to retrieve the current AWS region.
 # This is useful for dynamically referencing the region in other resources.
 # It allows us to avoid hardcoding the region in our resources.
+
 data "aws_region" "current" {
 }
 

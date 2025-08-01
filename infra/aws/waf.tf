@@ -40,3 +40,4 @@ resource "aws_wafv2_web_acl_association" "html_api_acl_association" {
   resource_arn = aws_apigatewayv2_api.html_api.execution_arn
   web_acl_arn  = aws_wafv2_web_acl.html_api_acl.arn
 }
+

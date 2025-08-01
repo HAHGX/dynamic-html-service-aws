@@ -264,7 +264,7 @@ jobs:
             </details>
             
             ---
-            ${{ steps.plan.outcome == 'success' && '💡 **Next Steps:** If the plan looks good, comment `terraform apply -workspace=' + steps.parse.outputs.workspace + '` to deploy these changes.' || '❌ **Plan failed. Check the output above for details.**' }}
+            ${{ steps.plan.outcome == 'success' && format('💡 **Next Steps:** If the plan looks good, comment `terraform apply -workspace={0}` to deploy these changes.', steps.parse.outputs.workspace) || '❌ **Plan failed. Check the output above for details.**' }}
 
       - name: Comment Apply Result
         if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'apply' && steps.apply.outcome
