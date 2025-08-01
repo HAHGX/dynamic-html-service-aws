@@ -11,7 +11,7 @@
 
 This document presents a comprehensive solution for serving dynamic HTML content using AWS serverless architecture, implemented with Infrastructure as Code (IaC) principles. The solution leverages AWS Lambda, API Gateway v2, Systems Manager Parameter Store, and is fully automated through Terraform and GitHub Actions.
 
-**Live Demo URL:** `https://qdh9wifuld.execute-api.us-east-2.amazonaws.com/`
+**Live Demo URL Development Env:** `https://qdh9wifuld.execute-api.us-east-2.amazonaws.com/`
 
 ---
 
