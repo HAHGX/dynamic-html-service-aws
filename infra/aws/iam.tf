@@ -22,7 +22,7 @@ resource "aws_iam_policy" "lambda_ssm_policy" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["ssm:GetParameter"],
-      Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.dynamic_string_param_name}"
+      Resource = aws_ssm_parameter.dynamic_string.arn
     }]
   })
 }

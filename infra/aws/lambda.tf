@@ -13,7 +13,7 @@ resource "aws_lambda_function" "html_lambda" {
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   environment {
     variables = {
-      DYNAMIC_STRING_PARAM_NAME = var.dynamic_string_param_name
+      DYNAMIC_STRING_PARAM_NAME = aws_ssm_parameter.dynamic_string.name
       REGION                    = var.aws_region
       Environment               = terraform.workspace
     }
