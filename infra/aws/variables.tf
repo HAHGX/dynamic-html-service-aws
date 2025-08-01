@@ -1,13 +1,13 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 # environment variable is used to differentiate resources across different environments using  the terraform workspace
 variable "environment" {
   description = "Deployment environment (development, staging, production)"
   type        = string
-  default     = "${terraform.workspace}"
+  default     = "development"
 }
 
 variable "env" {
@@ -24,9 +24,9 @@ variable "environment_account" {
   type        = map(string)
   description = "The AWS account ID for each environment"
   default = {
-    development = "123456789012"
-    staging     = "123456789012"
-    production  = "123456789012"
+    development = "942010118656"
+    staging     = "942010118656"
+    production  = "942010118656"
   }
 }
 

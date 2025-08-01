@@ -49,9 +49,10 @@ terraform {
     # In this case if the workspace is development will be terraform/states/services/development/PROJECT_NAME.tfstate
     key = "terraform.tfstate"
 
-    region   = "us-east-1"
-    encrypt  = true
-    role_arn = "arn:aws:iam::123456789012:role/handson-terraform-backend-role"
+    region         = "us-east-2"
+    encrypt        = true
+    role_arn       = "arn:aws:iam::942010118656:role/HandsonTerraformBackendRole"
+    dynamodb_table = "terraform-state-lock"
   }
 }
 # aws caller identity data source for retrieving the current AWS account ID and region.

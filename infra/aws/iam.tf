@@ -14,13 +14,13 @@ resource "aws_iam_role" "lambda_exec" {
 # This IAM role allows Lambda functions to assume the role and execute with the necessary permissions.
 resource "aws_iam_policy" "lambda_ssm_policy" {
   name        = "lambda_ssm_policy-${terraform.workspace}"
-  depends_on = [ aws_ssm_parameter.dynamic_string, aws_iam_role.lambda_exec ]
+  depends_on  = [aws_ssm_parameter.dynamic_string, aws_iam_role.lambda_exec]
   description = "Allow Lambda to read SSM parameter in ${terraform.workspace} environment"
-  policy      = jsonencode({
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
-      Action = ["ssm:GetParameter"],
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"],
       Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.dynamic_string_param_name}"
     }]
   })
