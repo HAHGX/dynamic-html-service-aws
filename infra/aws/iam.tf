@@ -11,6 +11,7 @@ resource "aws_iam_role" "lambda_exec" {
     }]
   })
 }
+
 # This IAM role allows Lambda functions to assume the role and execute with the necessary permissions.
 resource "aws_iam_policy" "lambda_ssm_policy" {
   name        = "lambda_ssm_policy-${terraform.workspace}"
