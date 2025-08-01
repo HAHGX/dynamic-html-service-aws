@@ -1,0 +1,283 @@
+name: Atlantis-style PR Commands
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  atlantis:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, 'terraform ')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Debug Event
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Issue number: ${{ github.event.issue.number }}"
+          echo "Is PR: ${{ github.event.issue.pull_request != null }}"
+          echo "Comment author: ${{ github.event.comment.user.login }}"
+          echo "Comment body: '${{ github.event.comment.body }}'"
+          echo "Comment starts with terraform: ${{ startsWith(github.event.comment.body, 'terraform ') }}"
+          
+      - name: Parse Command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          echo "Full comment: '$COMMENT'"
+          
+          # Remove leading/trailing whitespace and normalize
+          COMMENT=$(echo "$COMMENT" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          echo "Cleaned comment: '$COMMENT'"
+          
+          # Extract command (terraform plan, terraform apply, etc.)
+          if [[ $COMMENT =~ ^terraform[[:space:]]+([a-z]+)(.*)$ ]]; then
+            ACTION="${BASH_REMATCH[1]}"
+            ARGS="${BASH_REMATCH[2]}"
+            echo "Parsed action: '$ACTION'"
+            echo "Parsed args: '$ARGS'"
+            echo "action=$ACTION" >> $GITHUB_OUTPUT
+            echo "args=$ARGS" >> $GITHUB_OUTPUT
+            
+            # Extract workspace if specified (e.g., terraform plan -workspace=staging)
+            if [[ $ARGS =~ -workspace=([a-z]+) ]]; then
+              WORKSPACE="${BASH_REMATCH[1]}"
+              echo "Found workspace in args: '$WORKSPACE'"
+            else
+              WORKSPACE="development"  # default workspace
+              echo "Using default workspace: '$WORKSPACE'"
+            fi
+            echo "workspace=$WORKSPACE" >> $GITHUB_OUTPUT
+            
+            # Validate action
+            case $ACTION in
+              plan|apply|destroy|init)
+                echo "Action '$ACTION' is valid"
+                echo "valid=true" >> $GITHUB_OUTPUT
+                ;;
+              *)
+                echo "Action '$ACTION' is invalid"
+                echo "valid=false" >> $GITHUB_OUTPUT
+                ;;
+            esac
+          else
+            echo "Comment does not match terraform command pattern"
+            echo "valid=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Debug output
+          echo "Final outputs:"
+          echo "- valid: $(cat $GITHUB_OUTPUT | grep valid= | cut -d= -f2)"
+          echo "- action: $(cat $GITHUB_OUTPUT | grep action= | cut -d= -f2)"
+          echo "- workspace: $(cat $GITHUB_OUTPUT | grep workspace= | cut -d= -f2)"
+
+      - name: React to comment
+        if: steps.parse.outputs.valid == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          comment-id: ${{ github.event.comment.id }}
+          reactions: eyes
+
+      - name: Invalid command response
+        if: steps.parse.outputs.valid == 'false'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ❌ **Invalid terraform command**
+            
+            **Debug Info:**
+            - Comment received: `${{ github.event.comment.body }}`
+            - Parsed action: `${{ steps.parse.outputs.action }}`
+            - Parsed workspace: `${{ steps.parse.outputs.workspace }}`
+            
+            **Valid commands:**
+            - `terraform plan` - Plan changes for development
+            - `terraform plan -workspace=staging` - Plan changes for staging
+            - `terraform apply` - Apply changes for development  
+            - `terraform apply -workspace=production` - Apply changes for production
+            - `terraform destroy -workspace=staging` - Destroy staging resources
+            - `terraform init` - Initialize terraform
+            
+            **Examples:**
+            ```
+            terraform plan
+            terraform plan -workspace=staging
+            terraform apply -workspace=staging
+            terraform destroy -workspace=development
+            ```
+
+      - name: Get PR details
+        if: steps.parse.outputs.valid == 'true'
+        id: pr
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          echo "branch=$(echo "$PR_DATA" | jq -r '.head.ref')" >> $GITHUB_OUTPUT
+          echo "sha=$(echo "$PR_DATA" | jq -r '.head.sha')" >> $GITHUB_OUTPUT
+
+      - name: Checkout PR code
+        if: steps.parse.outputs.valid == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - name: Set up Terraform
+        if: steps.parse.outputs.valid == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.12.0"
+
+      - name: Configure AWS Credentials
+        if: steps.parse.outputs.valid == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::942010118656:role/HandsonTerraformBackendRole
+          aws-region: us-east-2
+
+      - name: Terraform Init
+        if: steps.parse.outputs.valid == 'true'
+        id: init
+        run: |
+          terraform init \
+            -backend-config="bucket=infra.handson.com" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=us-east-2" \
+            -backend-config="encrypt=true" \
+            -backend-config="role_arn=arn:aws:iam::942010118656:role/HandsonTerraformBackendRole" \
+            -backend-config="dynamodb_table=terraform-state-lock"
+        working-directory: ./infra/aws
+
+      - name: Select/Create Terraform Workspace
+        if: steps.parse.outputs.valid == 'true'
+        run: |
+          terraform workspace select ${{ steps.parse.outputs.workspace }} || \
+          terraform workspace new ${{ steps.parse.outputs.workspace }}
+        working-directory: ./infra/aws
+
+      - name: Terraform Plan
+        if: steps.parse.outputs.valid == 'true' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Terraform Apply
+        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'apply'
+        id: apply
+        run: |
+          terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply_output.txt
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Terraform Destroy
+        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'destroy'
+        id: destroy
+        run: |
+          terraform plan -destroy -no-color -out=destroy_plan 2>&1 | tee destroy_plan_output.txt
+          terraform apply -auto-approve -no-color destroy_plan 2>&1 | tee destroy_output.txt
+        working-directory: ./infra/aws
+        continue-on-error: true
+
+      - name: Comment Plan Result
+        if: steps.parse.outputs.valid == 'true' && (steps.parse.outputs.action == 'plan' || steps.parse.outputs.action == 'apply')
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## 📋 Terraform Plan - `${{ steps.parse.outputs.workspace }}` workspace
+            
+            **Command:** `terraform ${{ steps.parse.outputs.action }}`
+            **Workspace:** `${{ steps.parse.outputs.workspace }}`
+            **Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            **Branch:** `${{ steps.pr.outputs.branch }}`
+            **Commit:** `${{ steps.pr.outputs.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            
+            <details>
+            <summary>🔍 View Plan Output</summary>
+            
+            ```terraform
+            $(cat infra/aws/plan_output.txt)
+            ```
+            </details>
+            
+            ---
+            💡 **Next Steps:** If the plan looks good, comment `terraform apply -workspace=${{ steps.parse.outputs.workspace }}` to deploy these changes.
+
+      - name: Comment Apply Result
+        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'apply' && steps.apply.outcome
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## 🚀 Terraform Apply - `${{ steps.parse.outputs.workspace }}` workspace
+            
+            **Status:** ${{ steps.apply.outcome == 'success' && '✅ Deployment Successful' || '❌ Deployment Failed' }}
+            **Branch:** `${{ steps.pr.outputs.branch }}`
+            **Commit:** `${{ steps.pr.outputs.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            
+            <details>
+            <summary>🔍 View Apply Output</summary>
+            
+            ```terraform
+            $(cat infra/aws/apply_output.txt)
+            ```
+            </details>
+            
+            ---
+            ${{ steps.apply.outcome == 'success' && '🎉 **Infrastructure successfully updated!**' || '⚠️ **Deployment failed. Check the logs above for details.**' }}
+
+      - name: Comment Destroy Result
+        if: steps.parse.outputs.valid == 'true' && steps.parse.outputs.action == 'destroy' && steps.destroy.outcome
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## 💥 Terraform Destroy - `${{ steps.parse.outputs.workspace }}` workspace
+            
+            **Status:** ${{ steps.destroy.outcome == 'success' && '✅ Resources Destroyed' || '❌ Destroy Failed' }}
+            **Branch:** `${{ steps.pr.outputs.branch }}`
+            **Commit:** `${{ steps.pr.outputs.sha }}`
+            **Triggered by:** @${{ github.actor }}
+            **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            
+            <details>
+            <summary>🔍 View Destroy Output</summary>
+            
+            ```terraform
+            $(cat infra/aws/destroy_output.txt)
+            ```
+            </details>
+            
+            ---
+            ${{ steps.destroy.outcome == 'success' && '⚠️ **All resources in workspace `${{ steps.parse.outputs.workspace }}` have been destroyed!**' || '❌ **Destroy operation failed. Check the logs above for details.**' }}
+
+      - name: React success
+        if: steps.parse.outputs.valid == 'true' && (steps.plan.outcome == 'success' || steps.apply.outcome == 'success' || steps.destroy.outcome == 'success')
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          comment-id: ${{ github.event.comment.id }}
+          reactions: '+1'
+
+      - name: React failure
+        if: steps.parse.outputs.valid == 'true' && (steps.plan.outcome == 'failure' || steps.apply.outcome == 'failure' || steps.destroy.outcome == 'failure')
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          comment-id: ${{ github.event.comment.id }}
+          reactions: '-1'

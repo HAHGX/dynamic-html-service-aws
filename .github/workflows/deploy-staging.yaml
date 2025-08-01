@@ -1,0 +1,22 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  deploy-staging:
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      workspace: staging
+      action: ${{ github.event.inputs.action }}
+    secrets: inherit

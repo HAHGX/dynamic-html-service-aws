@@ -1,0 +1,27 @@
+name: Deploy Development
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  deploy-dev:
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      workspace: development
+      action: ${{ github.event.inputs.action || 'plan' }}
+    secrets: inherit
