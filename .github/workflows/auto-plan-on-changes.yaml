@@ -106,6 +106,8 @@ jobs:
       - name: Create PR Comment Content
         if: github.event_name == 'pull_request' && always()
         id: comment-content
+        env:
+          PLAN_OUTPUT: ${{ steps.plan.outputs.plan_output }}
         run: |
           ENV="${{ matrix.environment }}"
           INIT_STATUS="${{ steps.init.outcome }}"
@@ -133,7 +135,7 @@ jobs:
               echo "<summary>🔍 View Plan for $ENV</summary>"
               echo ""
               echo "\`\`\`terraform"
-              echo '${{ steps.plan.outputs.plan_output }}'
+              echo "$PLAN_OUTPUT"
               echo "\`\`\`"
               echo "</details>"
               echo ""
@@ -149,7 +151,7 @@ jobs:
               echo "<summary>View Plan Error</summary>"
               echo ""
               echo "\`\`\`"
-              echo '${{ steps.plan.outputs.plan_output }}'
+              echo "$PLAN_OUTPUT"
               echo "\`\`\`"
               echo "</details>"
               echo ""
