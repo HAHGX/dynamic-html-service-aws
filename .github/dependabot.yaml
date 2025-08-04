@@ -12,6 +12,7 @@ multi-ecosystem-groups:
 updates:
   - package-ecosystem: "pip" # See documentation for possible values
     directory: "/code/backend/lambda/dynamic_html_service/" # Location of package manifests
+    patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
 
   - package-ecosystem: "terraform"
