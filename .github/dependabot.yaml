@@ -4,8 +4,17 @@
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
+multi-ecosystem-groups:
+  infrastructure:
+    schedule:
+      interval: "weekly"
+
 updates:
   - package-ecosystem: "pip" # See documentation for possible values
     directory: "/code/backend/lambda/dynamic_html_service/" # Location of package manifests
-    schedule:
-      interval: "daily"
+    multi-ecosystem-group: "infrastructure"
+
+  - package-ecosystem: "terraform"
+    directory: "/infra/aws/"
+    patterns: ["aws"]
+    multi-ecosystem-group: "infrastructure"
